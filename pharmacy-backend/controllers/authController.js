@@ -1,0 +1,118 @@
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const UserModel = require("../models/User");
+const { permissionsFor } = require("../config/permissions");
+
+const generateToken = (user) => {
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+  );
+};
+
+// @route POST /api/auth/register
+exports.register = async (req, res) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) return res.status(400).json({ message: 'A JSON object is required.' });
+    const { password } = req.body;
+    const fullName = typeof req.body.fullName === 'string' ? req.body.fullName.trim() : '';
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
+
+    if (!fullName || !email || !phone || !password) {
+      return res.status(400).json({ message: "Please fill in all fields." });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 150 ||
+        fullName.length > 150 || phone.length > 30 || typeof password !== 'string' ||
+        password.length < 6 || Buffer.byteLength(password, 'utf8') > 72) {
+      return res.status(400).json({ message: 'Use a valid email, a name up to 150 characters, a phone up to 30 characters, and a password of at least 6 characters (maximum 72 bytes).' });
+    }
+    const existingUser = await UserModel.findByEmail(email);
+    if (existingUser) {
+      return res
+        .status(409)
+        .json({ message: "This email is already registered. Sign in with your existing password." });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const userId = await UserModel.create({
+      fullName,
+      email,
+      phone,
+      hashedPassword,
+    });
+
+    const user = await UserModel.findById(userId);
+    const token = generateToken(user);
+
+    return res.status(201).json({
+      message: "Registration successful.",
+      token,
+      user,
+    });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'This email is already registered. Sign in with your existing password.' });
+    }
+    console.error('Register error:', err.code || err.name);
+    return res.status(500).json({ message: "Server error. Try again." });
+  }
+};
+
+// @route POST /api/auth/login
+exports.login = async (req, res) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) return res.status(400).json({ message: 'A JSON object is required.' });
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const { password } = req.body;
+
+    if (!email || typeof password !== 'string' || !password) {
+      return res
+        .status(400)
+        .json({ message: "Please fill in all fields." });
+    }
+
+    const user = await UserModel.findByEmail(email);
+    if (!user) {
+      return res.status(401).json({ message: "Invalid email or password." });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid email or password." });
+    }
+
+    const token = generateToken(user);
+
+    // Don't send the password hash back to the client
+    delete user.password;
+
+    return res.status(200).json({
+      message: "Login successful.",
+      token,
+      user,
+    });
+  } catch (err) {
+    console.error('Login error:', err.code || err.name);
+    return res.status(500).json({ message: "Server error. Try again." });
+  }
+};
+
+// @route GET /api/auth/me  (protected)
+exports.getProfile = async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+    res.set("Cache-Control", "no-store");
+    return res.status(200).json({ user, permissions: permissionsFor(user.role) });
+  } catch (err) {
+    console.error("Get profile error:", err);
+    return res.status(500).json({ message: "Server error. Try again." });
+  }
+};

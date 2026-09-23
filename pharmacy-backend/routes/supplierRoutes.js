@@ -1,0 +1,12 @@
+const router = require('express').Router();
+const authenticate = require('../middleware/authMiddleware');
+const { authorize } = require('../config/permissions');
+const controller = require('../controllers/purchasingController');
+router.use(authenticate, authorize('suppliers'));
+router.get('/', controller.supplierList);
+router.get('/:id', controller.supplierDetail);
+router.post('/', authorize('suppliers:write'), controller.supplierCreate);
+router.put('/:id', authorize('suppliers:write'), controller.supplierUpdate);
+router.patch('/:id/deactivate', authorize('suppliers:archive'), controller.supplierStatus(false));
+router.patch('/:id/activate', authorize('suppliers:archive'), controller.supplierStatus(true));
+module.exports = router;

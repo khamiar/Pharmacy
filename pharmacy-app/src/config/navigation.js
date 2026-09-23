@@ -1,0 +1,15 @@
+export const navigation = [
+  { id: 'dashboard', label: 'Dashboard', path: '/dashboard', ready: true },
+  { id: 'medicines', label: 'Medicines', path: '/medicines', ready: true },
+  { id: 'categories', label: 'Categories', path: '/categories', ready: true },
+  { id: 'suppliers', label: 'Suppliers', path: '/suppliers', ready: true },
+  { id: 'purchases', label: 'Purchases', path: '/purchases', ready: true },
+  { id: 'stock', label: 'Stock' },
+  { id: 'sales', label: 'Sales' },
+  { id: 'customers', label: 'Customers' },
+  { id: 'prescriptions', label: 'Prescriptions' },
+  { id: 'users', label: 'Users / Staff' },
+  { id: 'reports', label: 'Reports' },
+  { id: 'notifications', label: 'Notifications' },
+  { id: 'settings', label: 'Settings' },
+];
