@@ -1,0 +1,10 @@
+const router = require('express').Router();
+const { authorize } = require('../config/permissions');
+const controller = require('../controllers/salesController');
+router.use(require('../middleware/authMiddleware'), authorize('sales'));
+router.get('/',controller.list);
+router.get('/medicines',controller.medicines);
+router.get('/:id/invoice',controller.invoice);
+router.get('/:id',controller.find);
+router.post('/',authorize('sales:write'),controller.create);
+module.exports = router;

@@ -17,7 +17,7 @@ exports.forResource = resource => ({
     data: await service.find(resource, validate.integer(req.params.id, 'ID', 1))
   })),
   create: wrap(async (req, res) => res.status(201).json({
-    data: await service.save(resource, validate.body(req.body, resource), req.user.id)
+    data: await service.save(resource, validate.body(req.body, resource), req.user.id, undefined, req.user.role)
   })),
   update: wrap(async (req, res) => res.json({
     data: await service.save(resource, validate.body(req.body, resource, true), req.user.id, validate.integer(req.params.id, 'ID', 1))
@@ -32,6 +32,7 @@ exports.forResource = resource => ({
 exports.options = wrap(async (req, res) => res.json({
   data: {
     categories: await Catalog.options(),
-    medicineTypes: validate.types
+    medicineTypes: validate.types,
+    defaults: await require("../models/Settings").profile()
   }
 }));

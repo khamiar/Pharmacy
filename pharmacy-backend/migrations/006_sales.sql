@@ -1,0 +1,37 @@
+CREATE TABLE IF NOT EXISTS sales (
+ id INT AUTO_INCREMENT PRIMARY KEY,
+ invoice_number VARCHAR(60) NOT NULL UNIQUE,
+ customer_name VARCHAR(150) NULL,
+ sale_date DATE NOT NULL,
+ subtotal DECIMAL(14,2) NOT NULL,
+ discount DECIMAL(14,2) NOT NULL,
+ total_amount DECIMAL(14,2) NOT NULL,
+ amount_paid DECIMAL(14,2) NOT NULL,
+ change_amount DECIMAL(14,2) NOT NULL,
+ payment_method ENUM('CASH','CARD','MOBILE_MONEY','OTHER') NOT NULL,
+ payment_status ENUM('PAID') NOT NULL DEFAULT 'PAID',
+ request_key CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL UNIQUE,
+ request_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ created_by INT NOT NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
+ CHECK (subtotal >= discount AND discount >= 0 AND total_amount = subtotal - discount AND amount_paid >= total_amount AND change_amount = amount_paid - total_amount),
+ INDEX idx_sale_date (sale_date)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS sale_items (
+ id INT AUTO_INCREMENT PRIMARY KEY,
+ sale_id INT NOT NULL,
+ medicine_id INT NOT NULL,
+ batch_id INT NOT NULL,
+ medicine_name VARCHAR(150) NOT NULL,
+ batch_number VARCHAR(100) NOT NULL,
+ quantity INT NOT NULL,
+ unit_price DECIMAL(12,2) NOT NULL,
+ unit_cost DECIMAL(12,2) NOT NULL,
+ subtotal DECIMAL(14,2) NOT NULL,
+ FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE RESTRICT,
+ FOREIGN KEY (medicine_id) REFERENCES medicines(id) ON DELETE RESTRICT,
+ FOREIGN KEY (batch_id) REFERENCES medicine_batches(id) ON DELETE RESTRICT,
+ CHECK (quantity > 0 AND unit_price >= 0 AND unit_cost >= 0 AND subtotal >= 0),
+ UNIQUE KEY uq_sale_batch (sale_id, batch_id)
+) ENGINE=InnoDB;

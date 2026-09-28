@@ -8,9 +8,12 @@ const dbPath = require.resolve('../config/db');
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {} };
 const User = require('../models/User');
 const Dashboard = require('../models/Dashboard');
-let user = { id: 1, full_name: 'Test staff', email: 'staff@example.test', role: 'staff' };
+let user = { id: 1, full_name: 'Test staff', email: 'staff@example.test', role: 'staff', status: 'ACTIVE' };
 let unavailable = false;
 let activitiesRead = 0;
+Dashboard.notifications = async () => ({items:[],unread:0});
+Dashboard.operationsSummary = async () => ({ totalCustomers: 0, pendingPrescriptions: 0 });
+Dashboard.salesSummary = async () => ({ total: '0.00', points: [], items: [] });
 Dashboard.purchasingSummary = async () => ({ totalSuppliers: 2, todayPurchases: '1500.00' });
 Dashboard.catalogSummary = async () => ({ totalMedicines: 3, lowStockMedicines: 2, expiredMedicines: 1, inStock: 1, outOfStock: 1, expiringSoon: 1 });
 Dashboard.lowStockMedicines = async () => [{ id: 1, medicine: 'Test medicine', currentStock: 0 }];
@@ -52,7 +55,7 @@ test('admin receives real model activity without fabricated totals', async () =>
   assert.equal(data.stats.totalMedicines.value, 3);
   assert.equal(data.stockOverview.lowStock, 1);
   assert.equal(data.stockOverview.outOfStock, 1);
-  assert.equal(data.stats.todaySales.value, null);
+  assert.equal(data.stats.todaySales.value, '0.00');
 });
 test('profile returns current account and server permissions', async () => {
   const { user: profile, permissions } = await (await request('/api/auth/me', token())).json();
@@ -80,7 +83,7 @@ test('malformed JSON returns 400 and unknown routes return JSON 404', async () =
 });
 test('existing login still hashes/verifies credentials and omits password', async () => {
   const password = await bcrypt.hash('test-password', 4);
-  User.findByEmail = async () => ({ id: 1, email: 'test@example.test', role: 'staff', password });
+  User.findByEmail = async () => ({ id: 1, email: 'test@example.test', role: 'staff', status: 'ACTIVE', password });
   const post = (body) => request('/api/auth/login', null, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   assert.equal((await post({ email: 'test@example.test', password: 'wrong' })).status, 401);
   const response = await post({ email: 'test@example.test', password: 'test-password' });
@@ -96,8 +99,11 @@ test('registration preserves default staff role even when client requests admin'
     assert.ok(await bcrypt.compare('test-password', input.hashedPassword));
     return 1;
   };
-  user = { id: 1, role: 'staff' };
+  user = { id: 1, role: 'staff', status: 'PENDING' };
   const response = await request('/api/auth/register', null, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fullName: 'Test', email: 'test@example.test', phone: '+255700000000', password: 'test-password', role: 'admin' }) });
   assert.equal(response.status, 201);
-  assert.equal((await response.json()).user.role, 'staff');
+  const registered = await response.json();
+  assert.equal(registered.user.role, 'staff');
+  assert.equal(registered.user.status, 'PENDING');
+  assert.equal(registered.token, undefined);
 });

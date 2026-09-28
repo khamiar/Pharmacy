@@ -23,12 +23,15 @@ async function save(data, userId, id) {
       values.updated_by = userId;
       if (id) {
         await Supplier.update(connection, id, values);
+        await require('./operationsService').audit(connection,userId,'UPDATED_SUPPLIER','Supplier',id,'Supplier updated.');
         return id;
       }
-      return Supplier.create(connection, {
+      const supplierId=await Supplier.create(connection, {
         ...values,
         created_by: userId
       });
+      await require("./operationsService").audit(connection,userId,"CREATED_SUPPLIER","Supplier",supplierId,"Supplier created.");
+      return supplierId;
     });
     return find(savedId);
   } catch (error) {
@@ -45,6 +48,7 @@ async function status(id, version, active, userId) {
       status: active ? 'ACTIVE' : 'INACTIVE',
       updated_by: userId
     });
+    await require('./operationsService').audit(connection,userId,'CHANGED_SUPPLIER_STATUS','Supplier',id,active?'Activated':'Deactivated');
   });
   return find(id);
 }

@@ -25,7 +25,8 @@ server after code updates; nodemon reloads automatically.
 - `POST /api/auth/login`: `email`, `password`.
 - `GET /api/auth/me`: current `user` and server-derived `permissions`.
 
-Registration/login return `{ message, token, user }`; password hashes are omitted.
+Login returns `{ message, token, user }`. Registration returns `{ message, user }`
+with a pending account and no token; password hashes are omitted.
 Protected APIs require `Authorization: Bearer <token>`. They load the current
 account so account removal and role changes take effect immediately.
 
@@ -174,3 +175,131 @@ invoices, exact decimal totals, rollback after a later-line conflict, supplier
 deactivation and historical snapshots. Temporary test databases are removed on
 completion. Browser checks cover staff category access, supplier/purchase flows,
 stock movements, dashboard totals and mobile receiving forms.
+
+
+## Administrator setup and staff approval
+
+`004_staff_approval.sql` adds `user_access` approval state to existing users and
+`audit_logs` for registration and access decisions. Existing non-admin users become
+PENDING on first migration; existing admins remain ACTIVE. Select the owner and
+coordinate migration with first-admin setup to avoid locking out existing users.
+Rerunning migration preserves reviewed status.
+
+After migration, explicitly configure the selected owner account:
+
+```bash
+npm run bootstrap-admin -- <account-id>
+```
+
+This server-only command preserves the password, enables ACTIVE/admin access,
+and records the setup in the audit log. It refuses if an active administrator
+already exists. There is no public admin-registration route and no automatic
+promotion of the first public registrant.
+
+New registrations are saved atomically as PENDING/staff with an audit entry and
+receive no token. Login requires a correct password and ACTIVE approval status.
+Every authenticated API checks current database status and role, including for
+previously issued tokens.
+
+Admins use Users / Staff (`/users`) to approve/reject registrations, assign roles
+to approved staff, and suspend/reactivate accounts. API endpoints are admin-only:
+
+- `GET /api/users`: search, status/role filters and pagination.
+- `PATCH /api/users/:id/approve`, `/reject`, `/suspend`, `/activate`: `{ version }`.
+- `PATCH /api/users/:id/role`: `{ version, role }`; supported roles are staff,
+  pharmacist and admin. Approve as staff first, then explicitly assign admin.
+
+Responses omit passwords. Updates require the current version, disallow self
+changes, retain the last active administrator, and recheck the actor's admin
+access under a shared database lock. This prevents simultaneous administrators
+from removing each other's access. Changes and audit entries commit together.
+Full audit reporting and additional role assignments remain future work.
+
+During a staged upgrade with approval tables not yet installed, existing accounts
+retain their previous sign-in access (`approval_setup_required: true`). New
+registration is blocked with 503 and rolled back until setup completes. Once the
+approval tables exist, all access uses their status without this legacy fallback.
+
+### Sales and reports
+
+Run `npm run migrate` to install `006_sales.sql` before starting the updated API.
+
+- `GET /api/sales`: search by invoice/customer, inclusive `from`/`to` dates, pagination.
+- `GET /api/sales/medicines?search=...`: up to 30 active medicines with usable stock.
+- `GET /api/sales/:id`: saved receipt.
+- `POST /api/sales`: request UUID, optional customer name, discount, amount paid,
+  payment method, and items containing medicine ID, quantity and expected unit price.
+  Server prices are authoritative; stale expected prices return 409.
+- `GET /api/reports?type=sales&from=YYYY-MM-DD&to=YYYY-MM-DD&page=1&limit=25`:
+  admin-only reports. Types: sales, purchases, stock, expiry, low_stock, profit,
+  suppliers, medicines. Inventory reports are current snapshots; expiry includes
+  expired stock and the next 90 days.
+
+Sales use earliest-expiring non-expired batches, medicine locks shared with
+purchasing, integer monetary arithmetic, idempotent checkout keys and atomic
+sale/item/stock/audit writes. Completed sales cannot be edited or deleted.
+Payments must cover the total. Customer names are receipt snapshots until the
+customer module exists. Returns, partial payments and payment-provider processing
+are not implemented. Payment method records the staff's received payment.
+
+Gross profit deducts recorded batch costs and invoice discounts from sales;
+operating expenses are not included. Medicine sales reports show revenue before
+invoice discounts. Missing/zero historical batch costs affect profit accuracy.
+
+### Customers, prescriptions, notifications and settings
+
+Run `npm run migrate` for additive `007_operations.sql` before using these modules.
+
+- `/api/customers`: authorized customer list/search, create, detail, update with
+  version, and `/:id/history` (paginated linked sales). No destructive delete API.
+- `/api/prescriptions`: admin/pharmacist list/search/status filters, create,
+  detail, pending-only versioned edits and `PATCH /:id/cancel`. List responses
+  omit patient names, clinical notes and instructions.
+- POS accepts optional `customer_id` and `prescription_id`. Prescription checkout
+  requires admin/pharmacist permission and locks the prescription before stock.
+  Only remaining prescribed quantities may be sold. Status, dispensed quantities,
+  customer history, sale, stock and audit commit together. Cancellation preserves
+  completed dispensing and blocks further dispensing.
+- `/api/notifications`: role-filtered stock/expiry warnings, purchases, pending
+  staff approvals and recent system events. `POST /read` with `{ key }` stores
+  per-user read state. Lists are bounded to 100 stock warnings, 100 expiry batches
+  and 30 events per event category. Refresh fetches current conditions; no email,
+  SMS, background push service or full historical alert archive is implied.
+- `/api/settings`: admin-only versioned updates. `/profile` exposes the pharmacy
+  profile and defaults to authenticated staff. TZS remains the fixed accounting
+  currency. Low-stock defaults apply to new medicine forms. Existing individual
+  medicine thresholds are unchanged. Expiry settings drive notifications and the
+  dashboard; Stock/Reports retain their explicit 30/60/90-day filters.
+- `/api/audit`: admin-only paginated action/entity search. New catalog, supplier,
+  receipt, sale, prescription, customer, staff and settings changes are recorded
+  transactionally. Audit entries cannot be edited or deleted through the API.
+
+New receipts snapshot the pharmacy profile and invoice footer. Later settings
+changes do not alter those saved receipts. Existing pre-migration receipts remain
+available without an invented profile or customer link. Customer names on old
+receipts are not automatically matched to customer records. Clinical instructions
+are entered from a prescription; the system does not generate dosing advice.
+
+### Invoice PDFs, images and recurring alert preferences
+
+Run `npm run migrate` for `008_media_alerts.sql`. Uploaded medicine/logo images
+are stored in MySQL, so database backups include them. `POST /api/media` accepts
+`{ purpose: 'medicine' | 'logo', image: '<data URL>' }` from authorized staff.
+JPEG/PNG/WebP inputs are limited to 2 MB and 20 megapixels, decoded, stripped of
+metadata and re-encoded as PNG. Logo uploads require settings permission. Product
+and logo images have public, unguessable immutable URLs; these are not patient
+photo uploads. Medicine saves validate the image purpose and preserve references.
+
+`GET /api/sales/:id/invoice` downloads an authenticated A4 PDF using saved invoice
+amounts and the pharmacy profile snapshot. It supports pagination and uploaded
+logos without fetching arbitrary remote URLs. Old receipts without a saved logo
+remain downloadable. New profile/invoice settings affect subsequent sales.
+
+Notification responses include uncapped critical-condition totals in `alerts`.
+Defaults are expired batches, expiry within 10 days (inclusive), and 10 or fewer
+usable units. The header refreshes unread counts every minute and after reads or
+navigation. It repeats visible reminders every 10 minutes while the app is open,
+including conditions already marked read. Background tabs may be throttled;
+conditions are rechecked when the tab becomes visible. No closed-browser push
+service is implied. Preferences can change the interval/thresholds or disable
+recurring reminders without disabling the notification list.

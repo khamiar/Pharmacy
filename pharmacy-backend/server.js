@@ -11,6 +11,7 @@ app.use(
     origin: process.env.CLIENT_URL || "http://localhost:5173",
   })
 );
+app.use('/api/media', require('./routes/mediaRoutes'));
 app.use(express.json());
 
 // Routes
@@ -22,6 +23,16 @@ app.use('/api/categories', require('./routes/catalogRoutes')('categories'));
 
 app.use('/api/suppliers', require('./routes/supplierRoutes'));
 app.use('/api/purchases', require('./routes/purchaseRoutes'));
+
+app.use('/api/users', require('./routes/userRoutes'));
+
+app.use('/api/stock', require('./routes/stockRoutes'));
+
+app.use('/api/sales', require('./routes/salesRoutes'));
+app.use('/api/reports', require('./routes/reportRoutes'));
+
+const operations = require('./routes/operationsRoutes');
+for (const module of ['customers','prescriptions','settings','notifications','audit']) app.use('/api/'+module, operations[module]);
 
 // Health check
 app.get("/", (req, res) => {

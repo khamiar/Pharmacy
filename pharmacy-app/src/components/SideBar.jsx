@@ -1,4 +1,6 @@
-import React from 'react';
+import {imageUrl} from './ImagePicker';
+import React, { useEffect, useState } from 'react';
+import { catalogRequest } from '../services/catalogService';
 import { NavLink } from 'react-router-dom';
 import { BsCapsule, BsGrid, BsTags, BsTruck, BsBag, BsBoxSeam, BsCart, BsPeople, BsClipboard, BsPersonBadge, BsBarChart, BsBell, BsGear, BsBoxArrowRight, BsX } from 'react-icons/bs';
 import { navigation } from '../config/navigation';
@@ -6,8 +8,15 @@ import { useAuth } from '../context/AuthContext';
 const icons = [BsGrid, BsCapsule, BsTags, BsTruck, BsBag, BsBoxSeam, BsCart, BsPeople, BsClipboard, BsPersonBadge, BsBarChart, BsBell, BsGear];
 export default function Sidebar({ drawerRef, mobileOpen, closeDrawer }) {
   const { user, permissions, logout } = useAuth();
+  const [profile,setProfile]=useState(null);
+  useEffect(()=>{
+    const controller=new AbortController();
+    const load=()=>catalogRequest('settings',{id:'profile',signal:controller.signal}).then(data=>{if(!controller.signal.aborted)setProfile(data);}).catch(()=>{});
+    load();window.addEventListener('pharmacy-profile-updated',load);
+    return ()=>{controller.abort();window.removeEventListener('pharmacy-profile-updated',load);};
+  },[]);
   return <aside id="app-sidebar" ref={drawerRef} className="app-sidebar" role={mobileOpen ? 'dialog' : undefined} aria-modal={mobileOpen || undefined} aria-label="Pharmacy navigation">
-    <div className="sidebar-brand"><BsCapsule size={26} /><span className="sidebar-label">Pharmacy System<small>Daily operations</small></span><button className="btn text-white mobile-close" onClick={closeDrawer} aria-label="Close navigation"><BsX size={24} /></button></div>
+    <div className="sidebar-brand">{profile?.logo_url ? <img src={imageUrl(profile.logo_url)} alt="" width="26" height="26" style={{objectFit:"contain"}} referrerPolicy="no-referrer"/> : <BsCapsule size={26} />}<span className="sidebar-label">{profile?.pharmacy_name || "Pharmacy System"}<small>Daily operations</small></span><button className="btn text-white mobile-close" onClick={closeDrawer} aria-label="Close navigation"><BsX size={24} /></button></div>
     <nav aria-label="Main navigation"><ul className="nav flex-column gap-1 p-2">
       {navigation.map((item, index) => {
         const Icon = icons[index]; const allowed = permissions.includes(item.id);

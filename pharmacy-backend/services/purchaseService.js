@@ -94,6 +94,7 @@ async function complete(data, userId) {
         });
         await Purchase.updatePrices(connection, item.medicine_id, item.purchase_price, item.selling_price, userId);
       }
+      await require('./operationsService').audit(connection,userId,'COMPLETED_PURCHASE','Purchase',purchaseId,purchaseNumber);
       return purchaseId;
     });
     return {

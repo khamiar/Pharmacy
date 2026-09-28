@@ -179,8 +179,8 @@ export default function Dashboard() {
             <span className="ms-auto">{date(data.generatedAt)} · EAT</span>
           </div>
           <div className="alert alert-light border small">
-            Medicine, stock, supplier and purchase figures come from your records.
-            Sales figures will appear when that module is available.
+            Medicine, stock, supplier, purchase and sales figures come from your
+            records.
           </div>
           <StatCard
             stats={cards.map(([key, label, Icon, color]) => ({
@@ -203,10 +203,38 @@ export default function Dashboard() {
           />
           <div className="dashboard-grid">
             <Panel title="Sales Overview" subtitle="Daily sales · TZS">
-              <EmptyState
-                status={data.salesOverview.status}
-                subject="Sales trends"
-              />
+              {data.salesOverview.points.length ? (
+                <div className="p-3">
+                  <p className="small text-secondary">
+                    Last 30 days · days with sales
+                  </p>
+                  {data.salesOverview.points.map((point) => (
+                    <div key={point.date} className="mb-2">
+                      <div className="d-flex justify-content-between small">
+                        <span>{point.date}</span>
+                        <span>{money(point.amount)}</span>
+                      </div>
+                      <meter
+                        className="w-100"
+                        aria-label={`Sales on ${point.date}`}
+                        min="0"
+                        max={Math.max(
+                          1,
+                          ...data.salesOverview.points.map((row) =>
+                            Number(row.amount),
+                          ),
+                        )}
+                        value={Number(point.amount)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  status={data.salesOverview.status}
+                  subject="Sales trends"
+                />
+              )}
             </Panel>
             <Panel
               title="Stock Overview"
@@ -231,7 +259,7 @@ export default function Dashboard() {
               <p className="small text-secondary px-4 pb-3 mb-0">
                 {data.stockOverview.status === "restricted"
                   ? "Your role does not include stock viewing."
-                  : "Physical stock counts. Expiring soon includes batches within 30 days."}
+                  : `Physical stock counts. Expiring soon includes batches within ${data.stockOverview.expiryWarningDays || 30} days.`}
               </p>
             </Panel>
           </div>

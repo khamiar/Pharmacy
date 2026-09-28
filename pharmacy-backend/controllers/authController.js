@@ -33,7 +33,7 @@ exports.register = async (req, res) => {
     if (existingUser) {
       return res
         .status(409)
-        .json({ message: "This email is already registered. Sign in with your existing password." });
+        .json({ message: existingUser.status === 'PENDING' ? 'This email is already registered and is awaiting administrator approval.' : 'This email is already registered. Sign in with your existing password.' });
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -47,17 +47,16 @@ exports.register = async (req, res) => {
     });
 
     const user = await UserModel.findById(userId);
-    const token = generateToken(user);
 
     return res.status(201).json({
-      message: "Registration successful.",
-      token,
+      message: "Registration submitted. An administrator must approve your account before you can sign in.",
       user,
     });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ message: 'This email is already registered. Sign in with your existing password.' });
     }
+    if (err.code === 'ER_NO_SUCH_TABLE') return res.status(503).json({ message: 'Staff approval setup is not complete yet. Please contact the pharmacy owner before registering.' });
     console.error('Register error:', err.code || err.name);
     return res.status(500).json({ message: "Server error. Try again." });
   }
@@ -86,6 +85,14 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password." });
     }
 
+    if (user.status !== 'ACTIVE') {
+      const messages = {
+        PENDING: 'Your registration is awaiting administrator approval.',
+        REJECTED: 'Your registration was not approved. Contact your administrator.',
+        SUSPENDED: 'Your account is suspended. Contact your administrator.',
+      };
+      return res.status(403).json({ message: messages[user.status] || 'Your account requires administrator approval.', code: 'ACCOUNT_INACTIVE' });
+    }
     const token = generateToken(user);
 
     // Don't send the password hash back to the client

@@ -18,10 +18,16 @@ if (process.env.RUN_DB_TESTS !== '1') {
       await connection.query(`USE \`${database}\``);
       const schema = await fs.readFile(path.join(__dirname, '../models/schema.sql'), 'utf8');
       await connection.query(schema.slice(schema.indexOf('CREATE TABLE')));
-      for (const file of ['002_catalog.sql', '003_purchasing.sql', '003_purchasing.sql']) {
+      for (const file of ['002_catalog.sql', '003_purchasing.sql', '003_purchasing.sql', '004_staff_approval.sql']) {
         const sql = await fs.readFile(path.join(__dirname, '../migrations', file), 'utf8');
         for (const statement of sql.split(';').map(value => value.trim()).filter(Boolean)) await connection.query(statement);
       }
+      const salesSchema = await fs.readFile(path.join(__dirname, '../migrations/006_sales.sql'), 'utf8');
+      for (const statement of salesSchema.split(';').map(value => value.trim()).filter(Boolean)) await connection.query(statement);
+      const operationsSchema = await fs.readFile(path.join(__dirname, '../migrations/007_operations.sql'), 'utf8');
+      for (const statement of operationsSchema.split(';').map(value => value.trim()).filter(Boolean)) await connection.query(statement);
+      const mediaSchema = await fs.readFile(path.join(__dirname, '../migrations/008_media_alerts.sql'), 'utf8');
+      for (const statement of mediaSchema.split(';').map(value => value.trim()).filter(Boolean)) await connection.query(statement);
       process.env.DB_NAME = database; process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
       pool = require('../config/db');
       server = require('../server').listen(0, '127.0.0.1');
@@ -34,6 +40,7 @@ if (process.env.RUN_DB_TESTS !== '1') {
       const tokens = {};
       for (const role of ['admin', 'staff', 'pharmacist']) {
         const [result] = await connection.query('INSERT INTO users (full_name,email,phone,password,role) VALUES (?,?,?,?,?)', [role, `${role}@example.test`, '+255700000000', 'unused-test-hash', role]);
+        await connection.query("INSERT INTO user_access (user_id, status) VALUES (?, 'ACTIVE')", [result.insertId]);
         tokens[role] = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET);
       }
       const today = new Date(Date.now() + 3 * 3600000).toISOString().slice(0, 10);
@@ -149,7 +156,29 @@ if (process.env.RUN_DB_TESTS !== '1') {
         const dashboard = (await request('/dashboard', tokens.admin)).data;
         assert.equal(dashboard.stats.totalSuppliers.value, 1);
         assert.equal(dashboard.stats.todayPurchases.value, '1.20');
-        assert.equal(dashboard.stats.todaySales.value, null);
+        assert.equal(Number(dashboard.stats.todaySales.value), 0);
+      });
+      await t.test('combined report includes sales and purchases with totals across pages', async () => {
+        const sale = await request('/sales', tokens.admin, 'POST', {
+          request_key: crypto.randomUUID(), discount: '0', amount_paid: '1', payment_method: 'CASH',
+          items: [{ medicine_id: medicine.id, quantity: 1, unit_price: '0.20' }]
+        });
+        assert.equal(sale.status,201,JSON.stringify(sale));
+        const report = await request('/reports',tokens.admin);
+        assert.equal(report.status,200,JSON.stringify(report));
+        assert.ok(report.data.items.some(row => row.transaction_type === 'SALE'));
+        assert.ok(report.data.items.some(row => row.transaction_type === 'PURCHASE'));
+        assert.equal(report.data.summary.sales.records,1);
+        assert.equal(report.data.summary.sales.total_amount,'0.20');
+        assert.equal(report.data.summary.purchases.records,4);
+        assert.equal(report.data.summary.purchases.total_amount,'1.20');
+        const page = await request('/reports?limit=1&page=2',tokens.admin);
+        assert.equal(page.data.items.length,1);
+        assert.deepEqual(page.data.summary,report.data.summary);
+        const empty = await request('/reports?from=2000-01-01&to=2000-01-02',tokens.admin);
+        assert.equal(empty.data.summary.sales.records,0);
+        assert.equal(empty.data.summary.purchases.records,0);
+        assert.equal((await request('/reports',tokens.staff)).status,403);
       });
     } finally {
       if (server) await new Promise(resolve => server.close(resolve));

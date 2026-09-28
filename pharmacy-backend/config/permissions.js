@@ -8,11 +8,12 @@ const roles = {
   store_keeper: ['dashboard', 'stock', 'purchases', 'suppliers', 'notifications'],
 };
 const actions = {
-  admin: ['suppliers:write', 'suppliers:archive', 'purchases:write', 'medicines:write', 'medicines:archive', 'categories:write', 'categories:archive'],
+  cashier: ['customers:write', 'sales:write'],
+  admin: ['customers:write', 'prescriptions:write', 'sales:write', 'medicines:opening-stock', 'suppliers:write', 'suppliers:archive', 'purchases:write', 'medicines:write', 'medicines:archive', 'categories:write', 'categories:archive'],
   store_keeper: ['suppliers:write', 'suppliers:archive', 'purchases:write'],
-  pharmacist: ['medicines:write', 'medicines:archive', 'categories:write', 'categories:archive'],
-  staff: ['medicines:write'],
-  pharmacy_assistant: ['medicines:write'],
+  pharmacist: ['customers:write', 'prescriptions:write', 'sales:write', 'medicines:write', 'medicines:archive', 'categories:write', 'categories:archive'],
+  staff: ['customers:write', 'sales:write', 'medicines:write'],
+  pharmacy_assistant: ['customers:write', 'sales:write', 'medicines:write'],
 };
 const permissionsFor = (role) => {
   const key = String(role).toLowerCase();

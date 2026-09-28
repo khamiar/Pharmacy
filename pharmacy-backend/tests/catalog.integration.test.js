@@ -26,6 +26,16 @@ if (process.env.RUN_DB_TESTS !== '1') {
       for (const statement of catalogSchema.split(';').map(value => value.trim()).filter(Boolean)) await admin.query(statement);
       const purchasingSchema = await fs.readFile(path.join(__dirname, '../migrations/003_purchasing.sql'), 'utf8');
       for (const statement of purchasingSchema.split(';').map(value => value.trim()).filter(Boolean)) await admin.query(statement);
+      const approvalSchema = await fs.readFile(path.join(__dirname, '../migrations/004_staff_approval.sql'), 'utf8');
+      for (const statement of approvalSchema.split(';').map(value => value.trim()).filter(Boolean)) await admin.query(statement);
+      const openingSchema = await fs.readFile(path.join(__dirname, '../migrations/005_opening_stock.sql'), 'utf8');
+      for (const statement of openingSchema.split(';').map(value => value.trim()).filter(Boolean)) await admin.query(statement);
+      const salesSchema = await fs.readFile(path.join(__dirname, '../migrations/006_sales.sql'), 'utf8');
+      for (const statement of salesSchema.split(';').map(value => value.trim()).filter(Boolean)) await admin.query(statement);
+      const operationsSchema = await fs.readFile(path.join(__dirname, '../migrations/007_operations.sql'), 'utf8');
+      for (const statement of operationsSchema.split(';').map(value => value.trim()).filter(Boolean)) await admin.query(statement);
+      const mediaSchema = await fs.readFile(path.join(__dirname, '../migrations/008_media_alerts.sql'), 'utf8');
+      for (const statement of mediaSchema.split(';').map(value => value.trim()).filter(Boolean)) await admin.query(statement);
       process.env.DB_NAME = database;
       process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
       pool = require('../config/db');
@@ -45,7 +55,12 @@ if (process.env.RUN_DB_TESTS !== '1') {
         assert.equal(created.user.role, 'staff');
         assert.equal(created.user.email, 'staff@example.test');
         assert.equal(created.user.password, undefined);
-        staffToken = created.token;
+        assert.equal(created.token, undefined);
+        assert.equal(created.user.status, 'PENDING');
+        assert.equal((await request('/auth/login', null, 'POST', { email: body.email, password: body.password })).status, 403);
+        // Approved fixture for catalog tests; approval authorization is covered separately.
+        await admin.query("UPDATE user_access SET status = 'ACTIVE' WHERE user_id = ?", [created.user.id]);
+        staffToken = jwt.sign({ id: created.user.id }, process.env.JWT_SECRET);
         assert.equal((await request('/auth/register', null, 'POST', body)).status, 409);
         const login = await request('/auth/login', null, 'POST', { email: ' STAFF@example.test ', password: 'test-password' });
         assert.equal(login.status, 200);
@@ -55,6 +70,7 @@ if (process.env.RUN_DB_TESTS !== '1') {
         const password = await bcrypt.hash('test-password', 4);
         for (const role of ['admin', 'pharmacist']) {
           const [result] = await admin.query('INSERT INTO users (full_name,email,phone,password,role) VALUES (?,?,?,?,?)', [role, `${role}@example.test`, '+255700000001', password, role]);
+          await admin.query("INSERT INTO user_access (user_id, status) VALUES (?, 'ACTIVE')", [result.insertId]);
           const token = jwt.sign({ id: result.insertId }, process.env.JWT_SECRET);
           if (role === 'admin') adminToken = token; else pharmacistToken = token;
         }
@@ -137,7 +153,119 @@ if (process.env.RUN_DB_TESTS !== '1') {
         assert.equal(dashboard.stockOverview.expiringSoon, 1);
         assert.equal(dashboard.stockOverview.lowStock, 1);
         assert.equal(dashboard.stockOverview.outOfStock, 1);
-        assert.equal(dashboard.stats.todaySales.value, null);
+        assert.equal(Number(dashboard.stats.todaySales.value), 0);
+      });
+      await t.test('stock page enforces access and lists persisted inventory and expiry', async () => {
+        assert.equal((await request('/stock')).status, 401);
+        assert.equal((await request('/stock', staffToken)).status, 403);
+        const listed = await request('/stock', pharmacistToken);
+        assert.equal(listed.status, 200);
+        assert.equal(listed.data.pagination.total, 2);
+        const row = listed.data.items.find(item => item.id === medicine.id);
+        assert.equal(Number(row.quantity), 5);
+        assert.equal(Number(row.usable_quantity), 2);
+        assert.equal(Number(row.expired_quantity), 3);
+        assert.equal((await request('/stock?stock=low', adminToken)).data.pagination.total, 1);
+        assert.equal((await request('/stock?stock=out', adminToken)).data.pagination.total, 1);
+        assert.equal((await request('/stock?expiry=expired', adminToken)).data.pagination.total, 1);
+        assert.equal((await request('/stock?expiry=30', adminToken)).data.pagination.total, 1);
+        assert.equal((await request('/stock?search=not-present', adminToken)).data.pagination.total, 0);
+        assert.equal((await request('/stock?stock=invalid', adminToken)).status, 400);
+        assert.equal((await request('/stock?supplier=invalid', adminToken)).status, 400);
+        assert.equal((await request('/stock/movements?type=invalid', adminToken)).status, 400);
+        assert.equal((await request('/stock/' + medicine.id + '/batches', adminToken)).data.length, 2);
+        assert.equal((await request('/stock/options', pharmacistToken)).status, 200);
+      });
+      await t.test('opening stock is authorized, atomic and safe to retry', async () => {
+        const payload = { ...initialMedicine, barcode: 'OPENING-TEST', request_key: crypto.randomUUID(), opening_stock: { quantity: 20, batch_number: 'INITIAL', expiry_date: '2099-12-31' } };
+        for (const token of [staffToken, pharmacistToken]) assert.equal((await request('/medicines', token, 'POST', payload)).status, 403);
+        for (const stock of [{ quantity: 0 }, { quantity: 1.5 }, { batch_number: '' }, { expiry_date: '2020-01-01' }, { expiry_date: '2099-02-30' }]) {
+          assert.equal((await request('/medicines', adminToken, 'POST', { ...payload, opening_stock: { ...payload.opening_stock, ...stock } })).status, 400);
+        }
+        const results = await Promise.all([request('/medicines', adminToken, 'POST', payload), request('/medicines', adminToken, 'POST', payload)]);
+        for (const result of results) {
+          assert.equal(result.status, 201, JSON.stringify(result));
+          assert.equal(Number(result.data.quantity), 20);
+          assert.equal(result.data.batches.length, 1);
+          assert.equal(result.data.opening_stock_movements.length, 1);
+          assert.equal(result.data.opening_stock_movements[0].previous_stock, 0);
+          assert.equal(result.data.opening_stock_movements[0].new_stock, 20);
+        }
+        assert.equal(results[0].data.id, results[1].data.id);
+        const movements = await request('/stock/movements?type=ADJUSTMENT&search=OPENING-', adminToken);
+        assert.equal(movements.status, 200);
+        assert.equal(movements.data.pagination.total, 1);
+        assert.equal(movements.data.items[0].new_stock, 20);
+        assert.equal((await request('/medicines', adminToken, 'POST', { ...payload, name: 'Changed' })).status, 409);
+        assert.equal((await request('/medicines/' + results[0].data.id, adminToken, 'PUT', { ...payload, version: 1 })).status, 400);
+        const [audit] = await admin.query("SELECT COUNT(*) AS total FROM audit_logs WHERE action = 'OPENING_STOCK' AND entity_id = ?", [results[0].data.id]);
+        assert.equal(audit[0].total, 1);
+        const Catalog = require('../models/Catalog');
+        const original = Catalog.saveOpeningStock;
+        Catalog.saveOpeningStock = async (...args) => { await original(...args); throw new Error('Injected transaction failure'); };
+        try {
+          assert.equal((await request('/medicines', adminToken, 'POST', { ...payload, barcode: 'ROLLBACK-TEST', request_key: crypto.randomUUID() })).status, 500);
+          const [rows] = await admin.query("SELECT id FROM medicines WHERE barcode = 'ROLLBACK-TEST'");
+          assert.equal(rows.length, 0);
+          const [requests] = await admin.query('SELECT COUNT(*) AS total FROM medicine_creation_requests');
+          assert.equal(requests[0].total, 1);
+          const [movements] = await admin.query("SELECT COUNT(*) AS total FROM stock_movements WHERE type = 'ADJUSTMENT'");
+          assert.equal(movements[0].total, 1);
+        } finally { Catalog.saveOpeningStock = original; }
+      });
+      await t.test('sales enforce FEFO, server prices, atomic rollback, idempotency and reports', async () => {
+        const soldMedicine = (await request('/medicines', adminToken, 'POST', { ...initialMedicine, barcode: 'SALE-FIXTURE', request_key: crypto.randomUUID(), opening_stock: { quantity: 10, batch_number: 'LATER', expiry_date: '2099-12-31' } })).data;
+        await admin.query("INSERT INTO medicine_batches (medicine_id,batch_number,expiry_date,quantity,purchase_price) VALUES (?, 'EARLY', '2098-01-01', 5, 1000), (?, 'OLD', '2020-01-01', 9, 1000)", [soldMedicine.id,soldMedicine.id]);
+        const payload = { request_key: crypto.randomUUID(), customer_name: 'Walk-in test', discount: '500', amount_paid: '20000', payment_method: 'CASH', items: [{ medicine_id: soldMedicine.id, quantity: 7, unit_price: '1500' }] };
+        assert.equal((await request('/sales')).status,401);
+        assert.equal(require('../config/permissions').permissionsFor('store_keeper').includes('sales:write'),false);
+        assert.equal((await request('/reports',staffToken)).status,403);
+        assert.equal((await request('/sales',staffToken,'POST',{...payload,items:[{...payload.items[0],unit_price:'1'}]})).status,409);
+        assert.equal((await request('/sales',staffToken,'POST',{...payload,amount_paid:'0'})).status,400);
+        assert.equal((await request('/sales',staffToken,'POST',{...payload,items:[...payload.items,{medicine_id:999999,quantity:1,unit_price:'1'}]})).status,409);
+        assert.equal(Number((await request('/medicines/'+soldMedicine.id,adminToken)).data.quantity),24);
+        const [first,retry] = await Promise.all([request('/sales',staffToken,'POST',payload),request('/sales',staffToken,'POST',payload)]);
+        assert.equal(first.status,201,JSON.stringify(first));
+        assert.equal(retry.status,201,JSON.stringify(retry));
+        assert.equal(first.data.id,retry.data.id);
+        assert.equal(first.data.total_amount,'10000.00');
+        assert.equal(first.data.change_amount,'10000.00');
+        assert.equal(first.data.items[0].batch_number,'EARLY');
+        assert.equal(first.data.items[0].quantity,5);
+        assert.equal(first.data.items[1].quantity,2);
+        assert.equal((await request('/sales',staffToken,'POST',{...payload,discount:'0'})).status,409);
+        assert.equal((await request('/sales/'+first.data.id,staffToken,'DELETE')).status,404);
+        const next={...payload,discount:'0',items:[{...payload.items[0],quantity:6}]};
+        const concurrent=await Promise.all([request('/sales',staffToken,'POST',{...next,request_key:crypto.randomUUID()}),request('/sales',staffToken,'POST',{...next,request_key:crypto.randomUUID()})]);
+        assert.deepEqual(concurrent.map(row=>row.status).sort(),[201,409]);
+        const remaining=(await request('/medicines/'+soldMedicine.id,adminToken)).data;
+        assert.equal(Number(remaining.quantity),11);
+        assert.equal(Number(remaining.usable_quantity),2);
+        assert.equal((await request('/sales',staffToken,'POST',{...next,request_key:crypto.randomUUID()})).status,409);
+        for (const type of ['sales','purchases','stock','expiry','low_stock','profit','suppliers','medicines']) {
+          const report=await request('/reports?type='+type,adminToken);
+          assert.equal(report.status,200,JSON.stringify(report));
+          if(type==='profit') {
+            assert.equal(report.data.items[0].net_sales,'19000.00');
+            assert.equal(Number(report.data.items[0].cost_of_goods),15004);
+            assert.equal(Number(report.data.items[0].gross_profit),3996);
+          }
+        }
+        assert.equal((await request('/reports?type=invalid',adminToken)).status,400);
+        assert.equal((await request('/reports?from=2099-01-01&to=2000-01-01',adminToken)).status,400);
+        assert.equal((await request('/reports?type=sales&from=2000-01-01&to=2000-01-02',adminToken)).data.pagination.total,0);
+        assert.equal(Number((await request('/dashboard',adminToken)).data.stats.todaySales.value),19000);
+        const [audit]=await admin.query("SELECT COUNT(*) total FROM audit_logs WHERE action='COMPLETED_SALE'");
+        assert.equal(audit[0].total,2);
+        const Purchase=require('../models/Purchase'), original=Purchase.movement;
+        Purchase.movement=async(...args)=>{await original(...args);throw new Error('Injected sale failure');};
+        try {
+          const failed={...payload,request_key:crypto.randomUUID(),discount:'0',items:[{...payload.items[0],quantity:1}]};
+          assert.equal((await request('/sales',staffToken,'POST',failed)).status,500);
+          assert.equal(Number((await request('/medicines/'+soldMedicine.id,adminToken)).data.quantity),11);
+          const [rows]=await admin.query('SELECT COUNT(*) total FROM sales');
+          assert.equal(rows[0].total,2);
+        } finally {Purchase.movement=original;}
       });
     } finally {
       if (server) await new Promise(resolve => server.close(resolve));

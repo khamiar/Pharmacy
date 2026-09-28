@@ -16,6 +16,7 @@ module.exports = async function authMiddleware(req, res, next) {
     // Load the current account so deleted accounts and changed roles take effect immediately.
     const user = await UserModel.findById(decoded.id);
     if (!user) return res.status(401).json({ message: 'Your account is no longer available.' });
+    if (user.status !== 'ACTIVE') return res.status(401).json({ message: 'Your account is not approved or is no longer active. Contact your administrator.', code: 'ACCOUNT_INACTIVE' });
     req.user = user;
     next();
   } catch (error) {

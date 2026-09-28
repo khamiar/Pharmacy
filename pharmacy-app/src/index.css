@@ -69,3 +69,21 @@
 .catalog-modal { border: 1px solid #dce5df; border-radius: 14px; padding: 0; width: min(760px, calc(100vw - 24px)); max-height: 90dvh; overflow-y: auto; color: #20372d; }
 .catalog-modal::backdrop { background: #102b2380; }
 .catalog-details dd { overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.invoice-sheet { border: 1px solid #dce5df; border-top: 6px solid #157347; padding: 24px; border-radius: 8px; background: #fff; color: #18232d; }
+.invoice-brand { display: flex; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid #dce5df; }
+.invoice-brand img { width: 64px; height: 64px; object-fit: contain; }
+.invoice-brand h2 { font-size: 1.3rem; color: #157347; }
+.invoice-brand p { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
+.invoice-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 24px 0; }
+.invoice-title h3 { font-size: 1.1rem; letter-spacing: .06em; }
+.invoice-title span { background: #e6f4eb; color: #157347; padding: 5px 12px; border-radius: 5px; font-weight: 700; font-size: .8rem; }
+.invoice-table th { background: #157347; color: white; font-size: .8rem; }
+.invoice-table td { padding-top: 12px; padding-bottom: 12px; }
+.invoice-totals { margin: 18px 0 0 auto; width: min(100%, 310px); }
+.invoice-totals > div { display: flex; justify-content: space-between; gap: 20px; padding: 8px; }
+.invoice-totals dt { font-weight: 500; } .invoice-totals dd { margin: 0; }
+.invoice-grand-total { color: #157347; background: #e6f4eb; font-weight: 700; border-radius: 4px; }
+.invoice-footer { border-top: 1px solid #dce5df; margin-top: 24px; padding-top: 16px; text-align: center; color: #56616b; font-size: .85rem; white-space: pre-wrap; }
+.stock-alert-toast { position: fixed; right: 20px; top: 88px; z-index: 1050; width: min(400px, calc(100vw - 32px)); padding: 18px; border: 1px solid #dfb457; border-left: 5px solid #c37b00; border-radius: 8px; background: #fff8e6; box-shadow: 0 8px 28px #0002; }
+@media(max-width: 575px) { .invoice-sheet { padding: 14px; } .invoice-brand { gap: 10px; } }

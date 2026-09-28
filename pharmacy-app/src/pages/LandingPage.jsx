@@ -34,16 +34,16 @@ export default function LandingPage() {
         <div className="row align-items-center g-5">
           <div className="col-lg-7">
             <span className="landing-badge mb-3 bg-dark">
-              <BsShieldCheck className="text-success" /> Trusted pharmacy management
+              <BsShieldCheck className="text-success" /> Trusted pharmacy
+              management
             </span>
             <h1 className="landing-title mt-3 mb-3">
-              Manage your pharmacy inventory, sales and staff, all in one
-              place.
+              Manage your pharmacy inventory, sales and staff, all in one place.
             </h1>
             <p className="landing-subtitle mb-4">
-              A simple, reliable system to track medicine stock, record
-              sales, manage suppliers and keep your pharmacy running
-              smoothly, every day.
+              A simple, reliable system to track medicine stock, record sales,
+              manage suppliers and keep your pharmacy running smoothly, every
+              day.
             </p>
             <div className="d-flex flex-wrap gap-3">
               <Link to="/register" className="btn btn-pharmacy-primary btn-lg">
