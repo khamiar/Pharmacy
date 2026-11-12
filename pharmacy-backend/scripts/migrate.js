@@ -23,4 +23,7 @@ async function migrate() {
     connection.release();
   }
 }
-migrate().catch(error => { console.error('Migration failed:', error.code || error.message); process.exitCode = 1; }).finally(() => pool.end());
+migrate().catch(error => {
+  console.error('Migration failed:', error);
+  process.exitCode = 1;
+}).finally(() => pool.end());

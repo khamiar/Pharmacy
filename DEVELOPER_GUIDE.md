@@ -2,6 +2,17 @@
 
 A comprehensive architectural reference, implementation breakdown, and developer onboarding manual for the Pharmacy Management System.
 
+## Django API replacement
+
+`pharmacy-djangoAPI/` is the Django replacement for the existing Express API.
+It preserves the frontend's `/api/...` endpoints and defaults to PostgreSQL
+database `pharmacy_system`. Its schema is created by Django migrations; it does
+not migrate existing Express/MySQL records. Run only one backend on port 5000.
+See the current [system overview](./SYSTEM_OVERVIEW.md) and
+[Django setup](./pharmacy-djangoAPI/README.md). The architecture and setup
+sections below describe the legacy Express/MySQL implementation and should not
+be followed for the active application.
+
 ---
 
 ## Table of Contents
@@ -419,4 +430,3 @@ Follow this standard pattern whenever building a new feature (e.g., an `expenses
 2. **Never expose passwords**: Always strip `password` hashes before returning user payloads.
 3. **Enforce optimistic locking**: Require and increment `version` on resource edits to prevent concurrent overwrite collisions.
 4. **Preserve audit history**: Record sensitive state changes (`APPROVED_USER`, `COMPLETED_SALE`, `ADJUSTED_STOCK`) in `audit_logs`.
-
